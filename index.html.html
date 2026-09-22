@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>엮인 도시 — Woven City</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Cormorant+Garamond:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #17140f;
+    --bg2: #1e1a14;
+    --paper: #e9e0c9;
+    --ink: #f2ecd9;
+    --ink-dim: #b9ad8f;
+    --ink-faint: #6f6650;
+    --accent: #c65b7c;
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; height:100%; background:var(--bg); overflow:hidden; -webkit-tap-highlight-color:transparent; }
+  body{
+    display:flex; flex-direction:column;
+    padding-top: env(safe-area-inset-top,0px);
+    padding-bottom: env(safe-area-inset-bottom,0px);
+  }
+
+  .bar{
+    position:fixed; top:0; left:0; right:0; z-index:5;
+    display:flex; align-items:center; gap:10px;
+    padding: calc(14px + env(safe-area-inset-top,0px)) 18px 10px;
+    pointer-events:none;
+  }
+  .bar > *{ pointer-events:auto; }
+  .title{
+    font-family:'Cormorant Garamond', serif; font-style:italic;
+    color: var(--ink-dim); font-size: 15px; letter-spacing:0.02em;
+    margin-right:auto;
+    text-shadow: 0 1px 6px rgba(0,0,0,0.6);
+  }
+  .iconbtn{
+    display:flex; align-items:center; justify-content:center;
+    width:34px; height:34px; border-radius:50%;
+    background: rgba(233,224,201,0.08); border:1px solid rgba(233,224,201,0.16);
+    color: var(--ink); cursor:pointer; backdrop-filter: blur(6px);
+    transition: background .15s ease, transform .12s ease;
+  }
+  .iconbtn:hover{ background: rgba(233,224,201,0.16); }
+  .iconbtn:active{ transform: scale(0.92); }
+  .iconbtn svg{ width:16px; height:16px; }
+
+  .stage{ position:fixed; inset:0; }
+  canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+  .hud{
+    position:fixed; left:18px; right:18px; bottom: calc(16px + env(safe-area-inset-bottom,0px));
+    z-index:5; pointer-events:none;
+    font-family:'Space Grotesk',sans-serif; color: var(--ink-dim);
+    display:flex; flex-direction:column; gap:4px;
+  }
+  .hud-main{
+    display:flex; align-items:baseline; gap:18px; flex-wrap:wrap;
+  }
+  .hud-time{
+    font-variant-numeric: tabular-nums;
+    font-size: clamp(22px, 3.4vw, 34px); font-weight:500; color: var(--ink);
+    letter-spacing:0.01em; text-shadow: 0 1px 10px rgba(0,0,0,0.5);
+  }
+  .hud-pop{
+    font-size: clamp(13px, 1.6vw, 16px); color: var(--ink-dim);
+  }
+  .hud-pop b{ color: var(--accent); font-weight:600; }
+  .hud-legend{
+    font-size:11px; color: var(--ink-faint);
+  }
+  .hud-sub{
+    font-size: 11.5px; color: var(--ink-faint);
+    opacity:0; transform: translateY(4px);
+    transition: opacity .3s ease, transform .3s ease;
+  }
+  .hud-sub.show{ opacity:1; transform:none; }
+  .hud-sub b{ color: var(--ink-dim); font-weight:500; }
+
+  .hint{
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    z-index:4; pointer-events:none;
+  }
+  .hint span{
+    font-family:'Cormorant Garamond', serif; font-style:italic; font-size: clamp(15px,2.4vw,20px);
+    color: rgba(233,224,201,0.5); letter-spacing:0.02em;
+    opacity: var(--hint-op, 1); transition: opacity .6s ease;
+  }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <div class="title">엮인 도시 — Woven City</div>
+  <button class="iconbtn" id="infoBtn" title="지점 정보 표시/숨기기">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16.5"/><circle cx="12" cy="7.6" r="0.9" fill="currentColor" stroke="none"/></svg>
+  </button>
+  <button class="iconbtn" id="fsBtn" title="전체화면">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 1-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4"/></svg>
+  </button>
+  <button class="iconbtn" id="playBtn" title="재생/정지">
+    <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+  </button>
+</div>
+
+<div class="stage">
+  <canvas id="c"></canvas>
+</div>
+
+<div class="hint" id="hint"><span>재생 버튼을 눌러 도시를 깨워보세요</span></div>
+
+<div class="hud" id="hud">
+  <div class="hud-main">
+    <span class="hud-time" id="hudTime">--:--:--</span>
+    <span class="hud-pop" id="hudPop">서울 유동인구 약 <b id="hudPopNum">–</b>만 명</span>
+  </div>
+  <div class="hud-legend">○ 하나 = 약 10만 명</div>
+  <div class="hud-sub" id="hudSub"><b id="capNode">—</b> · <span id="capState">대기</span></div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ============ Shared geographic data (same as the map/staff prototype) ============ */
+const POINTS = [
+  { id:'sangam',      name:'상암',        x:0.3009, y:0.4478, type:'mixed',    cap:7  },
+  { id:'nowon',       name:'노원',        x:0.6976, y:0.1726, type:'resident', cap:6  },
+  { id:'hongdae',     name:'홍대입구',    x:0.3761, y:0.5333, type:'night',    cap:12 },
+  { id:'sinchon',     name:'신촌',        x:0.4114, y:0.5212, type:'night',    cap:8  },
+  { id:'gwanghwamun', name:'광화문·덕수궁', x:0.5070, y:0.4755, type:'business', cap:10 },
+  { id:'jongno',      name:'종로·종각',    x:0.5228, y:0.4825, type:'business', cap:12 },
+  { id:'myeongdong',  name:'명동',        x:0.5264, y:0.5064, type:'night',    cap:12 },
+  { id:'ddm',         name:'동대문',      x:0.5848, y:0.4788, type:'mixed',    cap:9  },
+  { id:'wangsim',     name:'왕십리',      x:0.6523, y:0.5149, type:'mixed',    cap:7  },
+  { id:'seongsu',     name:'성수',        x:0.6955, y:0.5768, type:'mixed',    cap:8  },
+  { id:'gundae',      name:'건대입구',    x:0.7291, y:0.5908, type:'night',    cap:8  },
+  { id:'itaewon',     name:'이태원',      x:0.5495, y:0.6129, type:'night',    cap:10 },
+  { id:'gimpo',       name:'김포공항',    x:0.0626, y:0.5259, type:'transit',  cap:6  },
+  { id:'yeouido',     name:'여의도',      x:0.3820, y:0.6601, type:'business', cap:10 },
+  { id:'sadang',      name:'사당',        x:0.5183, y:0.8270, type:'resident', cap:6  },
+  { id:'gangnam',     name:'강남역',      x:0.6280, y:0.7485, type:'business', cap:14 },
+  { id:'jamsil',      name:'잠실',        x:0.8067, y:0.6947, type:'mixed',    cap:10 },
+];
+const EDGES = [
+  ['sangam','hongdae'],['hongdae','sinchon'],['sinchon','gwanghwamun'],
+  ['gwanghwamun','jongno'],['jongno','myeongdong'],['jongno','ddm'],['ddm','wangsim'],
+  ['wangsim','seongsu'],['seongsu','gundae'],['gundae','jamsil'],
+  ['jongno','itaewon'],['myeongdong','itaewon'],['itaewon','gangnam'],['itaewon','yeouido'],
+  ['yeouido','gimpo'],['yeouido','sadang'],['sadang','gangnam'],
+  ['gangnam','jamsil'],['nowon','jongno'],['hongdae','itaewon'],
+];
+const SILHOUETTE = [[0.2991,0.9165],[0.2885,0.888],[0.2965,0.8791],[0.2679,0.8235],[0.2614,0.8022],[0.2647,0.783],[0.2494,0.7588],[0.2104,0.8073],[0.1959,0.8082],[0.1932,0.8373],[0.1609,0.8234],[0.1309,0.8286],[0.1276,0.8397],[0.1202,0.8341],[0.1317,0.8134],[0.1314,0.7943],[0.1407,0.7842],[0.1153,0.7532],[0.1366,0.7332],[0.1442,0.7102],[0.1403,0.6816],[0.1529,0.6424],[0.1371,0.6126],[0.1379,0.5909],[0.0919,0.582],[0.0717,0.6087],[0.0616,0.5792],[0.0163,0.5613],[-0.0,0.5373],[0.0152,0.5301],[0.0269,0.513],[0.0265,0.4999],[0.0433,0.482],[0.0438,0.4697],[0.0869,0.4165],[0.0779,0.3778],[0.0873,0.3563],[0.0982,0.3587],[0.1338,0.406],[0.2066,0.4621],[0.2228,0.4657],[0.2689,0.45],[0.2702,0.4231],[0.2874,0.3966],[0.2932,0.4143],[0.3232,0.4096],[0.3261,0.3264],[0.3425,0.2787],[0.3392,0.2524],[0.3533,0.2187],[0.3362,0.192],[0.3567,0.2075],[0.3743,0.2044],[0.4365,0.1551],[0.458,0.1767],[0.4927,0.2507],[0.5027,0.2566],[0.5255,0.2376],[0.5296,0.2225],[0.5131,0.1665],[0.5482,0.128],[0.5424,0.0794],[0.5574,0.0634],[0.5827,0.0595],[0.5832,0.0236],[0.6,-0.0],[0.6269,0.0011],[0.6396,0.0343],[0.6613,0.0209],[0.6697,0.0316],[0.6771,0.0262],[0.6833,0.0516],[0.7175,0.0412],[0.7263,0.0257],[0.7466,0.0171],[0.7572,0.0171],[0.7669,0.039],[0.7906,0.0448],[0.7812,0.0805],[0.7905,0.106],[0.7863,0.1417],[0.7827,0.1582],[0.7674,0.1662],[0.7836,0.17],[0.7875,0.2037],[0.8164,0.2046],[0.8273,0.216],[0.8294,0.2521],[0.8091,0.2879],[0.8381,0.3012],[0.8445,0.3451],[0.8337,0.3724],[0.8432,0.3944],[0.8303,0.4023],[0.8229,0.4288],[0.8001,0.4347],[0.8073,0.4395],[0.8029,0.4697],[0.8107,0.479],[0.8034,0.5196],[0.8335,0.5238],[0.9551,0.4477],[0.986,0.4429],[0.9805,0.456],[0.9962,0.5162],[1.0,0.5719],[0.9514,0.5749],[0.9099,0.6597],[0.909,0.6814],[0.8988,0.6831],[0.9045,0.694],[0.8967,0.7046],[0.8988,0.7207],[0.9381,0.7294],[0.9471,0.7399],[0.9382,0.7808],[0.9196,0.7951],[0.9138,0.8247],[0.9062,0.8244],[0.9043,0.8362],[0.8784,0.8335],[0.8786,0.8579],[0.8605,0.8554],[0.8406,0.8934],[0.8157,0.8788],[0.802,0.8917],[0.7919,0.8829],[0.772,0.9432],[0.7568,0.9582],[0.7331,0.9552],[0.7372,0.9643],[0.7302,0.9985],[0.6835,1.0],[0.6599,0.9686],[0.6477,0.965],[0.6525,0.9284],[0.6419,0.8842],[0.645,0.874],[0.6367,0.8669],[0.6244,0.8937],[0.5885,0.9052],[0.5703,0.8614],[0.5533,0.8634],[0.5546,0.8801],[0.5201,0.906],[0.5001,0.9339],[0.4776,0.9409],[0.474,0.9581],[0.4179,0.9768],[0.4151,0.96],[0.3922,0.9243],[0.3699,0.959],[0.3578,0.9617],[0.3444,0.9847],[0.3343,0.9838],[0.3209,0.9663],[0.3095,0.9153],[0.2991,0.9165]];
+const MAP_ASPECT = 1.2245;
+
+const ADJ = {};
+POINTS.forEach(p=>ADJ[p.id]=[]);
+EDGES.forEach(([a,b])=>{ ADJ[a].push(b); ADJ[b].push(a); });
+function pointById(id){ return POINTS.find(p=>p.id===id); }
+function dist(a,b){ return Math.hypot(a.x-b.x,(a.y-b.y)/MAP_ASPECT); }
+
+/* ============ Congestion simulation — same rhythm model as before ============ */
+const RHYTHM = {
+  business: [[9,1.4,0.85],[12.5,1,0.4],[18.5,1.6,1]],
+  night:    [[13,2,0.25],[21,2.2,1]],
+  resident: [[8,1.2,0.7],[19,1.6,0.75]],
+  transit:  [[8,1.8,0.6],[18,2,0.7]],
+  mixed:    [[9,1.3,0.6],[13,1.3,0.45],[19,1.8,0.85]],
+};
+/* Day/night floors, loosely grounded in Seoul's published 주간·야간 인구 비교 stats:
+   강남·중구·종로 같은 업무·상업지구는 낮:밤 인구비가 1.4~3.5:1로 밤에 크게 빠지고,
+   노원·도봉·은평 같은 주거지는 반대로 야간인구가 주간보다 많다(주간인구지수 <100).
+   그 방향성만 가져와 지점 타입별로 "밤에 거의 사라지는 곳"과 "밤에도 남아있는 곳"을 나눈다. */
+const NIGHT_FLOOR = { business:0.04, night:0.05, mixed:0.13, resident:0.34, transit:0.07 };
+// how often people turn over at a place — fast for transit/nightlife, slow for where people live
+const TURNOVER    = { business:0.42, night:0.58, mixed:0.30, resident:0.13, transit:0.62 };
+
+function gauss(x,mu,w){ const d=(x-mu)/w; return Math.exp(-d*d*2.2); }
+function noise(seed,t){
+  return 0.5+0.5*(0.5*Math.sin(t*0.00071+seed*12.9)+0.3*Math.sin(t*0.00193+seed*3.7)+0.2*Math.sin(t*0.00337+seed*7.1));
+}
+function levelAt(point, ms){
+  const d=new Date(ms);
+  const hour=d.getHours()+d.getMinutes()/60+d.getSeconds()/3600;
+  const weekend=(d.getDay()===0||d.getDay()===6);
+  const floor = NIGHT_FLOOR[point.type];
+  let base=floor;
+  const curve=RHYTHM[point.type]||RHYTHM.mixed;
+  for(const [h,w,a] of curve){
+    let amp=a;
+    if(weekend){ if(point.type==='business') amp*=0.35; if(point.type==='night') amp*=1.15; }
+    base+=amp*gauss(hour,h,w);
+  }
+  base=Math.min(1,base);
+  const n=noise(point.x*3+point.y*7, ms);
+  return Math.max(floor, Math.min(1, base*0.78 + n*0.22*base + n*0.05));
+}
+function congestLabel(lvl){
+  if(lvl<0.25) return '여유';
+  if(lvl<0.5)  return '보통';
+  if(lvl<0.75) return '약간 붐빔';
+  return '붐빔';
+}
+
+/* ============ Citywide total floating population, by hour ============
+   A hand-set curve (in 만 = 10,000s) rather than a live pull — grounded loosely in how
+   Seoul's aggregate movement actually shapes a day: a modest commute rise near 8, a
+   lunchtime bump near 12:30, an afternoon lull, the day's real peak in the evening
+   (dinner + leisure, ~19:30), then a fast fall to a near-empty overnight trough. */
+const POP_KEYFRAMES = [
+  [0,6],[2,4],[4,3],[6,15],[8,230],[10,140],[12.5,420],[14.5,260],
+  [17,300],[19.5,1000],[21.5,620],[23,120],[24,6]
+];
+function totalManwonAt(hour){
+  for(let i=0;i<POP_KEYFRAMES.length-1;i++){
+    const [h0,v0]=POP_KEYFRAMES[i], [h1,v1]=POP_KEYFRAMES[i+1];
+    if(hour>=h0 && hour<=h1){
+      const t=(hour-h0)/(h1-h0);
+      const te=t*t*(3-2*t); // smoothstep — no overshoot between hand-set anchors
+      return v0+(v1-v0)*te;
+    }
+  }
+  return POP_KEYFRAMES[POP_KEYFRAMES.length-1][1];
+}
+const PEOPLE_PER_CIRCLE = 100000; // "○ 하나 = 약 10만 명"
+function cityStateAt(ms){
+  const d=new Date(ms);
+  const hour=d.getHours()+d.getMinutes()/60+d.getSeconds()/3600;
+  const jitter = 1 + (noise(1.37, ms)-0.5)*0.05; // small organic wobble, not a flat curve
+  const manwon = totalManwonAt(hour) * jitter;
+  const levels = POINTS.map(p=>levelAt(p, ms));
+  const sumLevels = levels.reduce((a,b)=>a+b,0) || 1;
+  return { manwon, levels, sumLevels };
+}
+
+/* ============ Palette per location type — echoes the woven-floral references ============ */
+const PALETTE = {
+  business: { base:[198,91,124],  accent:[232,163,189] }, // dusty rose
+  night:    { base:[122,74,104],  accent:[63,143,138]  }, // plum + teal streak
+  mixed:    { base:[156,138,90],  accent:[169,113,79]  }, // olive + terra
+  resident: { base:[185,183,154], accent:[143,156,122] }, // pale sage
+  transit:  { base:[111,138,144], accent:[183,201,194] }, // slate teal
+};
+
+/* ============ Musical mapping — map's vertical axis = staff pitch ============ */
+const PENT_STEPS=[0,2,4,7,9];
+const SCALE=[];
+for(let oct=0;oct<4;oct++) for(const s of PENT_STEPS) SCALE.push(45+oct*12+s);
+function midiToFreq(m){ return 440*Math.pow(2,(m-69)/12); }
+function noteIndexForY(y){ return Math.max(0,Math.min(SCALE.length-1, Math.round((1-y)*(SCALE.length-1)))); }
+
+/* ============ Audio: arrival-only, never continuous ============ */
+let actx=null, master=null, delayN=null, fbG=null, wetG=null;
+function ensureAudio(){
+  if(actx) return;
+  actx = new (window.AudioContext||window.webkitAudioContext)();
+  master = actx.createGain(); master.gain.value=0.55;
+  delayN = actx.createDelay(3.0); delayN.delayTime.value=0.5;
+  fbG = actx.createGain(); fbG.gain.value=0.3;
+  wetG = actx.createGain(); wetG.gain.value=0.22;
+  delayN.connect(fbG).connect(delayN);
+  delayN.connect(wetG).connect(master);
+  master.connect(actx.destination);
+}
+function playTone(freq, peak, dur, pan){
+  const t0=actx.currentTime;
+  const o1=actx.createOscillator(); o1.type='sine'; o1.frequency.value=freq;
+  const o2=actx.createOscillator(); o2.type='triangle'; o2.frequency.value=freq*1.004;
+  const g=actx.createGain(); g.gain.setValueAtTime(0,t0);
+  g.gain.linearRampToValueAtTime(peak, t0+0.06);
+  g.gain.exponentialRampToValueAtTime(0.0006, t0+dur);
+  const filt=actx.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value=500+peak*4000; filt.Q.value=0.5;
+  const pn = actx.createStereoPanner ? actx.createStereoPanner() : null;
+  if(pn) pn.pan.value=Math.max(-1,Math.min(1,pan));
+  o1.connect(g); o2.connect(g); g.connect(filt);
+  if(pn){ filt.connect(pn); pn.connect(master); pn.connect(delayN); }
+  else { filt.connect(master); filt.connect(delayN); }
+  o1.start(t0); o2.start(t0); o1.stop(t0+dur+0.05); o2.stop(t0+dur+0.05);
+}
+// Only sounds when the wandering light ARRIVES somewhere — silence in between is deliberate.
+function playArrival(node, level){
+  if(!actx) return;
+  const idx = noteIndexForY(node.y);
+  const pan = (node.x-0.5)*1.5;
+  // as more lights are out at once, each individual voice gets a little quieter —
+  // otherwise 100 simultaneous arrivals at peak hours would just clip into noise
+  const crowd = 1/Math.sqrt(Math.max(1, walkers.length));
+  if(level > 0.55){
+    // dense place: a small stacked chord, present and a little loud
+    const harmony = [0, 2, 4];
+    harmony.forEach((h,i)=>{
+      const f = midiToFreq(SCALE[Math.min(SCALE.length-1, idx+h)]);
+      playTone(f, (0.10+level*0.16)*crowd, 2.2+level*1.0, pan + i*0.15-0.15);
+    });
+  } else {
+    // marginal place: one faint, low, long tone — present but barely noticed
+    const lowIdx = Math.max(0, idx-5);
+    const f = midiToFreq(SCALE[lowIdx]);
+    playTone(f, (0.035+level*0.05)*crowd, 3.6+ (1-level)*1.4, pan);
+  }
+}
+
+/* ============ Canvas setup ============ */
+const canvas=document.getElementById('c');
+const ctx=canvas.getContext('2d');
+let dpr=1;
+function resize(){
+  dpr=Math.min(window.devicePixelRatio||1,2);
+  canvas.width=Math.round(innerWidth*dpr);
+  canvas.height=Math.round(innerHeight*dpr);
+}
+window.addEventListener('resize', resize);
+
+function fitGeoBox(availW, availH){
+  let w,h;
+  if(availW/availH>MAP_ASPECT){ h=availH; w=h*MAP_ASPECT; }
+  else { w=availW; h=w/MAP_ASPECT; }
+  return { w,h, x:(availW-w)/2, y:(availH-h)/2 };
+}
+function drawPath(c, pts, W, H, close){
+  c.beginPath(); c.moveTo(pts[0][0]*W, pts[0][1]*H);
+  for(let i=1;i<pts.length;i++) c.lineTo(pts[i][0]*W, pts[i][1]*H);
+  if(close) c.closePath();
+}
+
+/* ============ Wandering lights (metaphorical passersby) ============ */
+// Not one light anymore — a whole population of them, each independently roaming
+// the graph and sounding only on arrival. Their count uses the exact same "10만 명
+// = one circle" conversion as the population clusters, so the number of bright,
+// sound-making lights rises and falls with the real citywide total (up to MAX_WALKERS)
+// — busy hours fill the map with them, quiet hours leave only a few, or none.
+const MAX_WALKERS = 100;
+let walkers = [];
+let nextWalkerId = 0;
+
+function pickNext(fromId, avoidId){
+  const opts = ADJ[fromId].filter(id=>id!==avoidId);
+  const pool = opts.length ? opts : ADJ[fromId];
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+function legDuration(a,b){ return 2600 + dist(a,b)*9000 + Math.random()*900; }
+function newWalker(now){
+  const cur = POINTS[Math.floor(Math.random()*POINTS.length)].id;
+  const next = pickNext(cur, null);
+  const dur = legDuration(pointById(cur), pointById(next));
+  // start already partway into its leg (randomly) so a large spawn doesn't
+  // arrive all at once — arrivals stay spread out even right after pressing play
+  return { id: nextWalkerId++, cur, next, t0: now - Math.random()*dur, dur };
+}
+function targetWalkerCount(ms){
+  const city = cityStateAt(ms);
+  return Math.max(0, Math.min(MAX_WALKERS, Math.round(city.manwon/10)));
+}
+
+const reveal = {}; // id -> {t0, level}
+function triggerReveal(id, level, now){
+  reveal[id] = { t0: now, level };
+}
+function revealAmount(id, now){
+  const r = reveal[id];
+  if(!r) return 0;
+  const age=(now-r.t0)/1000;
+  if(age<0) return 0;
+  if(age<0.18) return age/0.18;
+  const d = Math.exp(-(age-0.18)/2.6);
+  return Math.max(0, Math.min(1,d));
+}
+
+let running=false;
+function arrive(w, now){
+  const node = pointById(w.next);
+  const level = levelAt(node, Date.now());
+  triggerReveal(node.id, level, now);
+  if(running) playArrival(node, level);
+  updateCaption(node, level);
+  const prev = w.cur;
+  w.cur = w.next;
+  w.next = pickNext(w.cur, prev);
+  w.t0 = now;
+  w.dur = legDuration(pointById(w.cur), pointById(w.next));
+}
+
+/* ============ Population cluster rendering ============ */
+function drawCluster(c, cx, cy, unit, n, level, turnover, palette, seedBase, timeMs, reveal){
+  if(n<=0){
+    // nothing here right now — leave a barely-there ember so the place isn't erased from memory
+    c.beginPath(); c.arc(cx,cy,unit*0.18,0,Math.PI*2);
+    c.fillStyle = `rgba(${palette.base.join(',')},0.10)`;
+    c.fill();
+    return;
+  }
+  const spin = timeMs/1000*turnover;
+  for(let i=0;i<n;i++){
+    const angle = seedBase*6.283 + i*2.399963 + spin*(0.7+0.3*Math.sin(i*1.9+seedBase));
+    const wob = (Math.sin(timeMs/1000*(0.4+turnover*0.6)+i*2.7+seedBase)+1)/2;
+    const orbitR = unit*(0.55+wob*1.15+ (i%3)*0.16);
+    const dx = Math.cos(angle)*orbitR, dy = Math.sin(angle)*orbitR;
+    const flick = (Math.sin(timeMs/650+seedBase*4+i*3.3)+1)/2;
+    const r = unit*(0.11+0.06*flick) * (1+reveal*0.6);
+    const col = i%2===0 ? palette.base : palette.accent;
+    c.beginPath();
+    c.arc(cx+dx, cy+dy, r, 0, Math.PI*2);
+    c.fillStyle = `rgba(${col.join(',')},${0.55+0.35*flick+reveal*0.15})`;
+    c.fill();
+  }
+  // soft anchor glow so the place still reads as a place, not just loose dots
+  const glow = c.createRadialGradient(cx,cy,0,cx,cy,unit*2.1);
+  glow.addColorStop(0, `rgba(${palette.base.join(',')},${0.14*level+0.1*reveal})`);
+  glow.addColorStop(1, `rgba(${palette.base.join(',')},0)`);
+  c.fillStyle = glow;
+  c.beginPath(); c.arc(cx,cy,unit*2.1,0,Math.PI*2); c.fill();
+}
+
+/* ============ Main draw ============ */
+let boxCache=null;
+function draw(now){
+  const W=canvas.width, H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+
+  const pad = 0.05;
+  const availW=W*(1-pad*2), availH=H*(1-pad*2);
+  const box = fitGeoBox(availW, availH);
+  const tW=box.w, tH=box.h, oX=W*pad+box.x, oY=H*pad+box.y;
+  const minDim = Math.min(tW,tH);
+  boxCache={tW,tH,oX,oY};
+
+  ctx.save();
+  ctx.translate(oX,oY);
+
+  // faint boundary — structure, not a dashboard
+  drawPath(ctx, SILHOUETTE, tW, tH, true);
+  ctx.strokeStyle = 'rgba(233,224,201,0.10)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // faint connective threads
+  ctx.strokeStyle = 'rgba(233,224,201,0.05)';
+  ctx.lineWidth = 0.8;
+  for(const [a,b] of EDGES){
+    const pa=pointById(a), pb=pointById(b);
+    ctx.beginPath();
+    ctx.moveTo(pa.x*tW, pa.y*tH);
+    ctx.lineTo(pb.x*tW, pb.y*tH);
+    ctx.stroke();
+  }
+
+  const nowMs = Date.now();
+  const city = cityStateAt(nowMs);
+  const totalPeople = city.manwon*10000;
+
+  // population clusters — each location's share of the real citywide total right now
+  POINTS.forEach((p,i)=>{
+    const level = city.levels[i];
+    const rv = revealAmount(p.id, now);
+    const people = totalPeople * (level/city.sumLevels);
+    const n = Math.min(70, Math.round(people/PEOPLE_PER_CIRCLE));
+    const unit = minDim*(0.018 + Math.min(1,n/22)*0.017);
+    const pal = PALETTE[p.type];
+    drawCluster(ctx, p.x*tW, p.y*tH, unit, n, level, TURNOVER[p.type], pal, p.x*13+p.y*29, nowMs, rv);
+  });
+
+  // HUD — current time + real-time citywide floating population estimate
+  hudTime.textContent = new Date(nowMs).toLocaleTimeString('ko-KR',{hour12:false});
+  hudPopNum.textContent = Math.round(city.manwon).toLocaleString('ko-KR');
+
+  // wandering lights — a pool whose size tracks real-time citywide density
+  if(running){
+    const target = targetWalkerCount(nowMs);
+    if(walkers.length < target) walkers.push(newWalker(now));
+    else if(walkers.length > target) walkers.pop();
+
+    for(const w of walkers){
+      const a=pointById(w.cur), b=pointById(w.next);
+      const t = Math.max(0, Math.min(1, (now-w.t0)/w.dur));
+      const ease = t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2;
+      const wx = (a.x+(b.x-a.x)*ease)*tW, wy=(a.y+(b.y-a.y)*ease)*tH;
+      const glowR = minDim*0.027;
+      const glow = ctx.createRadialGradient(wx,wy,0,wx,wy,glowR);
+      glow.addColorStop(0,   'rgba(250,240,220,0.75)');
+      glow.addColorStop(0.45,'rgba(250,240,220,0.2)');
+      glow.addColorStop(1,   'rgba(250,240,220,0)');
+      ctx.fillStyle=glow;
+      ctx.beginPath(); ctx.arc(wx,wy,glowR,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='rgba(255,250,240,0.95)';
+      ctx.beginPath(); ctx.arc(wx,wy,Math.max(1.4,minDim*0.0045),0,Math.PI*2); ctx.fill();
+
+      if(t>=1) arrive(w, now);
+    }
+  }
+
+  ctx.restore();
+}
+
+function loop(ts){
+  draw(ts);
+  requestAnimationFrame(loop);
+}
+
+/* ============ UI ============ */
+const playBtn=document.getElementById('playBtn');
+const playIcon=document.getElementById('playIcon');
+const fsBtn=document.getElementById('fsBtn');
+const infoBtn=document.getElementById('infoBtn');
+const hint=document.getElementById('hint');
+const hudSub=document.getElementById('hudSub');
+const capNode=document.getElementById('capNode');
+const capState=document.getElementById('capState');
+const hudTime=document.getElementById('hudTime');
+const hudPopNum=document.getElementById('hudPopNum');
+let infoOn=false;
+
+function updateCaption(node, level){
+  capNode.textContent = node.name;
+  capState.textContent = `${congestLabel(level)} · ${(level*100)|0}%`;
+}
+
+playBtn.addEventListener('click', async ()=>{
+  ensureAudio();
+  if(actx.state==='suspended') await actx.resume();
+  running = !running;
+  if(running){
+    playIcon.innerHTML='<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
+    hint.style.setProperty('--hint-op','0');
+    if(walkers.length===0){
+      const now = performance.now();
+      const n = targetWalkerCount(Date.now());
+      for(let i=0;i<n;i++) walkers.push(newWalker(now - i*400));
+    }
+  } else {
+    playIcon.innerHTML='<path d="M8 5v14l11-7z"/>';
+  }
+});
+fsBtn.addEventListener('click', ()=>{
+  if(!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+  else document.exitFullscreen();
+});
+infoBtn.addEventListener('click', ()=>{
+  infoOn=!infoOn;
+  hudSub.classList.toggle('show', infoOn);
+});
+
+resize();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
